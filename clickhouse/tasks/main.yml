@@ -1,0 +1,105 @@
+---
+- name: Установка зависимостей
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - dirmngr
+    state: present
+    update_cache: yes
+
+- name: Добавление GPG-ключа ClickHouse
+  apt_key:
+    url: https://repo.clickhouse.com/CLICKHOUSE-KEY.GPG
+    state: present
+
+- name: Добавление репозитория ClickHouse
+  apt_repository:
+    repo: deb https://repo.clickhouse.com/deb/stable/ main/
+    state: present
+
+- name: Установка clickhouse-server и clickhouse-client
+  apt:
+    name: clickhouse-server, clickhouse-client
+    state: present
+
+- name: Создание директорий для Keeper
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: clickhouse
+    group: clickhouse
+    mode: '0755'
+  loop:
+    - /var/lib/clickhouse/coordination/log
+    - /var/lib/clickhouse/coordination/snapshots
+
+- name: Шаблон: macros.xml
+  template:
+    src: macros.xml.j2
+    dest: /etc/clickhouse-server/config.d/macros.xml
+    owner: clickhouse
+    group: clickhouse
+    mode: '0644'
+
+- name: Конфиг: кластер
+  copy:
+    content: |
+      <yandex>
+        <remote_servers>
+          <clickhouse_cluster>
+            <shard>
+              <replica>
+                <host>srv-ch-01</host>
+                <port>9000</port>
+              </replica>
+              <replica>
+                <host>srv-ch-02</host>
+                <port>9000</port>
+              </replica>
+            </shard>
+          </clickhouse_cluster>
+        </remote_servers>
+      </yandex>
+    dest: /etc/clickhouse-server/config.d/clusters.xml
+    owner: clickhouse
+    group: clickhouse
+
+- name: Конфиг: ClickHouse Keeper
+  copy:
+    content: |
+      <clickhouse>
+        <keeper_server>
+          <tcp_port>9181</tcp_port>
+          <server_id>{% if inventory_hostname == 'srv-ch-01' %}1{% else %}2{% endif %}</server_id>
+          <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+          <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+          <raft_configuration>
+            <server>
+              <id>1</id>
+              <hostname>srv-ch-01</hostname>
+              <port>9444</port>
+            </server>
+            <server>
+              <id>2</id>
+              <hostname>srv-ch-02</hostname>
+              <port>9444</port>
+            </server>
+          </raft_configuration>
+        </keeper_server>
+        <zookeeper>
+          <host>srv-ch-01</host>
+          <port>9181</port>
+          <host>srv-ch-02</host>
+          <port>9181</port>
+        </zookeeper>
+      </clickhouse>
+    dest: /etc/clickhouse-server/config.d/keeper.xml
+    owner: clickhouse
+    group: clickhouse
+
+- name: Перезапуск ClickHouse
+  systemd:
+    name: clickhouse-server
+    state: restarted
+    enabled: yes
