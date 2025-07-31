@@ -1,0 +1,10 @@
+<yandex>
+    <cluster>clickhouse_cluster</cluster>
+    <shard>
+        {% if inventory_hostname == 'srv-ch-01' %}
+        <replica>srv-ch-01</replica>
+        {% else %}
+        <replica>srv-ch-02</replica>
+        {% endif %}
+    </shard>
+</yandex>
