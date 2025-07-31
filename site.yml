@@ -1,0 +1,24 @@
+---
+- name: 🛠️ Развертывание ClickHouse кластера
+  hosts: clickhouse_nodes
+  become: yes
+  roles:
+    - clickhouse
+
+- name: 🚀 Развертывание Kafka (KRaft mode)
+  hosts: db_node
+  become: yes
+  roles:
+    - kafka_kraft
+
+- name: 🔄 Развертывание Airbyte
+  hosts: airbyte_node
+  become: yes
+  roles:
+    - airbyte
+
+- name: 📊 Установка Grafana и MinIO
+  hosts: monitoring_node
+  become: yes
+  roles:
+    - monitoring_minio
