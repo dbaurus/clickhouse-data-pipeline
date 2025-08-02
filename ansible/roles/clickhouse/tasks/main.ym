@@ -1,0 +1,80 @@
+- name: Установка ClickHouse
+  apt:
+    name: clickhouse-server, clickhouse-client
+    state: present
+    update_cache: yes
+
+- name: Создание директорий для Keeper
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: clickhouse
+    group: clickhouse
+  loop:
+    - /var/lib/clickhouse/coordination/log
+    - /var/lib/clickhouse/coordination/snapshots
+
+- name: Настройка ClickHouse Keeper (на двух нодах)
+  copy:
+    content: |
+      <clickhouse>
+        <keeper_server>
+          <tcp_port>9181</tcp_port>
+          <server_id>{% if inventory_hostname == 'srv-ch-01' %}1{% else %}2{% endif %}</server_id>
+          <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+          <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+          <raft_configuration>
+            <server><id>1</id><hostname>srv-ch-01</hostname><port>9444</port></server>
+            <server><id>2</id><hostname>srv-ch-02</hostname><port>9444</port></server>
+          </raft_configuration>
+        </keeper_server>
+        <zookeeper>
+          <host>srv-ch-01</host>
+          <port>9181</port>
+          <host>srv-ch-02</host>
+          <port>9181</port>
+        </zookeeper>
+      </clickhouse>
+    dest: /etc/clickhouse-server/config.d/keeper.xml
+
+- name: Настройка macros.xml
+  copy:
+    content: |
+      <yandex>
+        <cluster>clickhouse_cluster</cluster>
+        <shard>
+          {% if inventory_hostname == 'srv-ch-01' %}
+          <replica>srv-ch-01</replica>
+          {% else %}
+          <replica>srv-ch-02</replica>
+          {% endif %}
+        </shard>
+      </yandex>
+    dest: /etc/clickhouse-server/config.d/macros.xml
+    owner: clickhouse
+    group: clickhouse
+
+- name: Конфигурация кластера
+  copy:
+    content: |
+      <yandex>
+        <remote_servers>
+          <clickhouse_cluster>
+            <shard>
+              <internal_replication>true</internal_replication>
+              <replica><host>srv-ch-01</host><port>9000</port></replica>
+            </shard>
+            <shard>
+              <internal_replication>true</internal_replication>
+              <replica><host>srv-ch-02</host><port>9000</port></replica>
+            </shard>
+          </clickhouse_cluster>
+        </remote_servers>
+      </yandex>
+    dest: /etc/clickhouse-server/config.d/clusters.xml
+
+- name: Перезапуск ClickHouse
+  systemd:
+    name: clickhouse-server
+    state: restarted
+    enabled: yes
