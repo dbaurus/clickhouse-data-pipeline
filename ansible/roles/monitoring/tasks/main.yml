@@ -1,0 +1,50 @@
+- name: Установка Docker
+  apt:
+    name: docker.io
+    state: present
+
+- name: Создание директорий MinIO
+  file:
+    path: "/minio/{{ item }}"
+    state: directory
+  loop:
+    - data
+    - config
+
+- name: Создание docker-compose.yml
+  copy:
+    dest: /opt/monitoring/docker-compose.yml
+    content: |
+      version: '3'
+      services:
+        minio:
+          image: minio/minio
+          ports:
+            - "9000:9000"
+            - "9001:9001"
+          environment:
+            MINIO_ROOT_USER: admin
+            MINIO_ROOT_PASSWORD: minio123
+          command: server /data --console-address ":9001"
+          volumes:
+            - /minio/data:/data
+            - /minio/config:/root/.minio
+
+        grafana:
+          image: grafana/grafana
+          ports:
+            - "3000:3000"
+          volumes:
+            - grafana-storage:/var/lib/grafana
+          environment:
+            GF_SECURITY_ADMIN_PASSWORD: grafana123
+
+      volumes:
+        grafana-storage:
+  notify: start monitoring
+
+handlers:
+  - name: start monitoring
+    command: docker-compose up -d
+    args:
+      chdir: /opt/monitoring
