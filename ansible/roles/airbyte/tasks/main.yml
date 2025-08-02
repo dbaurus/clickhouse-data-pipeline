@@ -1,0 +1,25 @@
+- name: Установка Docker
+  apt:
+    name: docker.io
+    state: present
+
+- name: Установка Docker Compose
+  get_url:
+    url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
+    dest: /usr/local/bin/docker-compose
+    mode: '0755'
+
+- name: Создание директории Airbyte
+  file:
+    path: /opt/airbyte
+    state: directory
+
+- name: Скачать docker-compose.yml
+  get_url:
+    url: https://raw.githubusercontent.com/airbytehq/airbyte-platform/master/docker-compose.yaml
+    dest: /opt/airbyte/docker-compose.yml
+
+- name: Запуск Airbyte
+  command: docker-compose up -d
+  args:
+    chdir: /opt/airbyte
