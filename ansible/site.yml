@@ -1,0 +1,23 @@
+- name: Установка ClickHouse кластера
+  hosts: clickhouse_nodes
+  become: yes
+  roles:
+    - clickhouse
+
+- name: Установка PostgreSQL и Kafka
+  hosts: db_node
+  become: yes
+  roles:
+    - db
+
+- name: Установка Airbyte
+  hosts: airbyte_node
+  become: yes
+  roles:
+    - airbyte
+
+- name: Установка Grafana и MinIO
+  hosts: monitoring_node
+  become: yes
+  roles:
+    - monitoring
