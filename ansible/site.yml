@@ -1,3 +1,4 @@
+---
   - name: Установка ClickHouse кластера
   hosts: clickhouse_nodes
   become: yes
