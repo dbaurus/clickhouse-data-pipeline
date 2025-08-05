@@ -81,9 +81,3 @@
     name: kafka
     state: started
     enabled: yes
-
-handlers:
-  - name: restart postgresql
-    systemd:
-      name: postgresql
-      state: restarted
