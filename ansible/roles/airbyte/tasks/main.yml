@@ -1,25 +1,29 @@
-- name: Установка Docker
+- name: Установка зависимостей
+  become: yes
   apt:
-    name: docker.io
+    name: [curl, wget, ca-certificates, docker.io]
     state: present
+    update_cache: yes
 
-- name: Установка Docker Compose
-  get_url:
-    url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
-    dest: /usr/local/bin/docker-compose
-    mode: '0755'
+- name: Проверка, установлен ли abctl
+  command: which abctl
+  register: abctl_check
+  ignore_errors: yes
+  changed_when: false
 
-- name: Создание директории Airbyte
-  file:
-    path: /opt/airbyte
-    state: directory
+- name: Установка Airbyte CLI (abctl) через официальный скрипт
+  become: yes
+  shell: |
+    DIR_INSTALL=/usr/local/bin \
+    curl -LsfS https://get.airbyte.com | bash -
+  environment:
+    DIR_INSTALL: /usr/local/bin
+    DIR_TMP: /tmp/abctl_install
+  when: abctl_check.rc != 0
 
-- name: Скачать docker-compose.yml
-  get_url:
-    url: https://raw.githubusercontent.com/airbytehq/airbyte-platform/master/docker-compose.yaml
-    dest: /opt/airbyte/docker-compose.yml
-
-- name: Запуск Airbyte
-  command: docker-compose up -d
-  args:
-    chdir: /opt/airbyte
+- name: Установка Airbyte в Docker
+  become: yes
+  command: abctl local install --insecure-cookies
+  environment:
+    DIR_INSTALL: /opt/airbyte
+  creates: /opt/airbyte/docker-compose.yaml
