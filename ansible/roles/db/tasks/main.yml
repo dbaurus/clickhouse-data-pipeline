@@ -12,7 +12,7 @@
 
 - name: Копирование init.sql
   copy:
-    src: ../../config/postgres-init.sql
+    src: ../../../config/postgres-init.sql
     dest: /tmp/init.sql
 
 - name: Запуск init.sql
