@@ -5,7 +5,7 @@
 
 - name: Включение логической репликации
   lineinfile:
-    path: /etc/postgresql/*/main/postgresql.conf
+    path: /etc/postgresql/14/main/postgresql.conf
     regexp: '^wal_level'
     line: 'wal_level = logical'
   notify: restart postgresql
@@ -20,20 +20,20 @@
   become_user: postgres
   command: psql -f /tmp/init.sql
 
-- name: Установка Java
+- name: Установка Java 17
   apt:
-    name: openjdk-11-jre-headless
+    name: openjdk-17-jre-headless
     state: present
 
 - name: Скачать и распаковать Kafka
   unarchive:
-    src: https://downloads.apache.org/kafka/3.7.0/kafka_2.13-3.7.0.tgz
+    src: https://dlcdn.apache.org/kafka/4.0.0/kafka_2.13-4.0.0.tgz
     dest: /opt
     remote_src: yes
 
 - name: Симлинк kafka
   file:
-    src: /opt/kafka_2.13-3.7.0
+    src: /opt/kafka_2.13-4.0.0
     dest: /opt/kafka
     state: link
 
@@ -47,19 +47,33 @@
     content: "{{ node_id.stdout }}"
     dest: /opt/kafka/node_id
 
+- name: Создание директории config/kraft
+  become: yes
+  file:
+    path: /opt/kafka/config/kraft
+    state: directory
+    mode: '0755'
+
 - name: Настройка server.properties
   copy:
     content: |
       process.roles=broker,controller
-      node.id={{ lookup('file', '/opt/kafka/node_id') }}
+      node.id=1
       controller.quorum.voters=1@srv-db-01:9093
-      listeners=PLAINTEXT://0.0.0.0:9092
+      # Слушаем на нескольких интерфейсах
+      listeners=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      # Как называются листнеры
+      listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      # Указываем, какой листнер используется для контроллера
+      controller.listener.names=CONTROLLER
+      # Адрес, по которому другие узлы видят этот
       advertised.listeners=PLAINTEXT://srv-db-01:9092
+      # Где хранить данные
       log.dirs=/tmp/kafka-logs
     dest: /opt/kafka/config/kraft/server.properties
 
 - name: Форматирование хранилища
-  command: /opt/kafka/bin/kafka-storage.sh format -t "{{ lookup('file', '/opt/kafka/node_id') }}" -c /opt/kafka/config/kraft/server.properties
+  command: /opt/kafka/bin/kafka-storage.sh format -t "{{ node_id.stdout }}" -c /opt/kafka/config/kraft/server.properties
   args:
     creates: /tmp/kafka-logs/meta.properties
 
