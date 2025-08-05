@@ -42,9 +42,3 @@
       volumes:
         grafana-storage:
   notify: start monitoring
-
-handlers:
-  - name: start monitoring
-    command: docker-compose up -d
-    args:
-      chdir: /opt/monitoring
