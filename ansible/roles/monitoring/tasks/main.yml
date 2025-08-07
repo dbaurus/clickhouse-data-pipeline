@@ -1,7 +1,10 @@
-- name: Установка Docker
-  apt:
-    name: docker.io
-    state: present
+- name: Установка Docker Compose
+  become: yes
+  get_url:
+    url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
+    dest: /usr/local/bin/docker-compose
+    mode: '0755'
+    force: yes
 
 - name: Создание директории /opt/monitoring
   become: yes
