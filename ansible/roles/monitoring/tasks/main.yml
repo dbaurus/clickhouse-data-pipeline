@@ -3,6 +3,13 @@
     name: docker.io
     state: present
 
+- name: Создание директории /opt/monitoring
+  become: yes
+  file:
+    path: /opt/monitoring
+    state: directory
+    mode: '0755'
+
 - name: Создание директорий MinIO
   file:
     path: "/minio/{{ item }}"
