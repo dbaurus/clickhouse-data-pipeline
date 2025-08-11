@@ -1,8 +1,50 @@
-- name: Установка ClickHouse
+
+- name: Установка зависимостей
+  become: yes
   apt:
-    name: clickhouse-server, clickhouse-client
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
     state: present
+    update_cache: no
+
+- name: Проверка существования GPG-ключа ClickHouse
+  stat:
+    path: /usr/share/keyrings/clickhouse-keyring.gpg
+  register: key_stat
+
+- name: Добавление GPG-ключа ClickHouse
+  become: yes
+  shell: |
+    curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+  args:
+    executable: /bin/bash
+  when: not key_stat.stat.exists
+
+- name: Добавление APT-репозитория ClickHouse
+  become: yes
+  copy:
+    content: "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main"
+    dest: /etc/apt/sources.list.d/clickhouse.list
+    mode: '0644'
+
+- name: Обновление кэша пакетов
+  become: yes
+  apt:
     update_cache: yes
+
+- name: Установка пакетов ClickHouse
+  become: yes
+  apt:
+    name:
+      - clickhouse-server
+      - clickhouse-client
+      - clickhouse-common-static
+      - clickhouse-odbc-bridge
+      - clickhouse-library-bridge
+    state: present
 
 - name: Создание директорий для Keeper
   file:
@@ -57,7 +99,7 @@
 - name: Конфигурация кластера
   copy:
     content: |
-      <yandex>
+      <clickhouse>
         <remote_servers>
           <clickhouse_cluster>
             <shard>
@@ -70,7 +112,7 @@
             </shard>
           </clickhouse_cluster>
         </remote_servers>
-      </yandex>
+      </clickhouse>
     dest: /etc/clickhouse-server/config.d/clusters.xml
 
 - name: Перезапуск ClickHouse
