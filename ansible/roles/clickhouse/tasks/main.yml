@@ -82,7 +82,7 @@
 - name: Настройка macros.xml
   copy:
     content: |
-      <yandex>
+      <clickhouse>
         <cluster>clickhouse_cluster</cluster>
         <shard>
           {% if inventory_hostname == 'srv-ch-01' %}
@@ -91,7 +91,7 @@
           <replica>srv-ch-02</replica>
           {% endif %}
         </shard>
-      </yandex>
+      </clickhouse>
     dest: /etc/clickhouse-server/config.d/macros.xml
     owner: clickhouse
     group: clickhouse
