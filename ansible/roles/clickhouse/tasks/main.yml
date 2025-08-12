@@ -55,32 +55,49 @@
     - /var/lib/clickhouse/coordination/log
     - /var/lib/clickhouse/coordination/snapshots
 
-- name: Настройка ClickHouse Keeper (на двух нодах)
+- name: Настройка ClickHouse Keeper
   copy:
     content: |
       <clickhouse>
         <keeper_server>
           <tcp_port>9181</tcp_port>
           <server_id>{% if inventory_hostname == 'srv-ch-01' %}1{% else %}2{% endif %}</server_id>
+          <listen_host>0.0.0.0</listen_host>
           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+          <session_timeout_ms>30000</session_timeout_ms>
+          <operation_timeout_ms>10000</operation_timeout_ms>
           <raft_configuration>
-            <server><id>1</id><hostname>10.1.15.51</hostname><port>9444</port></server>
-            <server><id>2</id><hostname>10.1.15.53</hostname><port>9444</port></server>
+            <server>
+              <id>1</id>
+              <hostname>10.1.15.51</hostname>
+              <port>9444</port>
+            </server>
+            <server>
+              <id>2</id>
+              <hostname>10.1.15.53</hostname>
+              <port>9444</port>
+            </server>
           </raft_configuration>
         </keeper_server>
+
         <zookeeper>
           <node>
-           <host>10.1.15.51</host>
-           <port>9181</port>
+            <host>10.1.15.51</host>
+            <port>9181</port>
+            <priority>1</priority>
           </node>
           <node>
-           <host>10.1.15.53</host>
-           <port>9181</port>
+            <host>10.1.15.53</host>
+            <port>9181</port>
+            <priority>2</priority>
           </node>
         </zookeeper>
       </clickhouse>
     dest: /etc/clickhouse-server/config.d/keeper.xml
+    owner: clickhouse
+    group: clickhouse
+    mode: '0644'
 
 - name: Настройка macros.xml
   copy:
@@ -94,8 +111,7 @@
           {% endif %}
           <cluster>clickhouse_cluster</cluster>
           <shard>shard01</shard>
-        </macros>
-      </clickhouse>
+        </macros>      </clickhouse>
     dest: /etc/clickhouse-server/config.d/macros.xml
     owner: clickhouse
     group: clickhouse
@@ -104,6 +120,16 @@
   copy:
     content: |
       <clickhouse>
+          {% if inventory_hostname == 'srv-ch-01' %}
+       <interserver_http_host>10.1.15.51</interserver_http_host>
+          {% else %}
+       <interserver_http_host>10.1.15.53</interserver_http_host>
+          {% endif %}
+       <interserver_http_credentials>
+        <user>interserver</user>
+        <password>interserver_password</password>
+       </interserver_http_credentials>
+
         <remote_servers>
           <clickhouse_cluster>
             <shard>
@@ -120,8 +146,14 @@
   copy:
     content: |
      <clickhouse>
-      <level>information</level>
       <listen_host>0.0.0.0</listen_host>
+        <logger>
+          <level>information</level>
+          <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+          <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+          <size>1000M</size>
+          <count>10</count>
+        </logger>
      </clickhouse>
     dest: /etc/clickhouse-server/config.d/start.xml
     owner: clickhouse
