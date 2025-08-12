@@ -1,14 +1,47 @@
-- name: Установка PostgreSQL
+- name: Установка PostgreSQL 14
+  become: yes
   apt:
-    name: postgresql, postgresql-contrib
+    name: postgresql
     state: present
+    update_cache: yes
 
-- name: Включение логической репликации
+- name: Включение wal_level = logical в postgresql.conf
+  become: yes
   lineinfile:
     path: /etc/postgresql/14/main/postgresql.conf
-    regexp: '^wal_level'
+    regexp: '^#?wal_level\s*='
     line: 'wal_level = logical'
-  notify: restart postgresql
+    backup: yes
+
+- name: Разрешить подключения с любого хоста (listen_addresses)
+  become: yes
+  lineinfile:
+    path: /etc/postgresql/14/main/postgresql.conf
+    regexp: '^#?listen_addresses\s*='
+    line: "listen_addresses = '0.0.0.0'"
+    backup: yes
+
+- name: Добавить правило для логической репликации в pg_hba.conf
+  become: yes
+  lineinfile:
+    path: /etc/postgresql/14/main/pg_hba.conf
+    line: "host replication all all md5"
+    regexp: "^host\\s+replication\\s+all\\s+all\\s+md5$"
+    backup: yes
+
+- name: Разрешить подключения ко всем БД с любого IP
+  become: yes
+  lineinfile:
+    path: /etc/postgresql/14/main/pg_hba.conf
+    line: "host all all all md5"
+    regexp: "^host\\s+all\\s+all\\s+all\\s+md5$"
+    backup: yes
+
+- name: Перезапуск PostgreSQL
+  become: yes
+  systemd:
+    name: postgresql
+    state: restarted
 
 - name: Копирование init.sql
   copy:
@@ -20,7 +53,7 @@
   become_user: postgres
   command: psql -f /tmp/init.sql
 
-- name: Установка Java 17
+- name: Установка Java
   apt:
     name: openjdk-17-jre-headless
     state: present
@@ -59,15 +92,20 @@
     content: |
       process.roles=broker,controller
       node.id=1
-      controller.quorum.voters=1@srv-db-01:9093
+      controller.quorum.voters=1@10.1.15.103:9093
+
       # Слушаем на нескольких интерфейсах
       listeners=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+
       # Как называются листнеры
       listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+
       # Указываем, какой листнер используется для контроллера
       controller.listener.names=CONTROLLER
+
       # Адрес, по которому другие узлы видят этот
-      advertised.listeners=PLAINTEXT://srv-db-01:9092
+      advertised.listeners=PLAINTEXT://10.1.15.103:9092
+
       # Где хранить данные
       log.dirs=/tmp/kafka-logs
     dest: /opt/kafka/config/kraft/server.properties
