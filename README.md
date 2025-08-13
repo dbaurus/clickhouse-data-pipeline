@@ -3,9 +3,9 @@ Cистема управления потоками данных с ClickHouse.
 
 ## 🖥️ Серверы
 - ClickHouse: srv-ch-01, srv-ch-02
-- DB: srv-db-01 (PostgreSQL + Kafka)
+- DB: srv-db-01 (PostgreSQL)
 - Airbyte: srv-ab-01
-- Monitoring: srv-mon-01 (Grafana + MinIO)
+- Monitoring: srv-mon-01 (Grafana)
 
 ## 🚀 Запуск
 ```bash
