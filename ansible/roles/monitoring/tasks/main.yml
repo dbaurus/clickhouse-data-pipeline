@@ -21,34 +21,184 @@
     - data
     - config
 
-- name: Создание docker-compose.yml
-  copy:
-    dest: /opt/monitoring/docker-compose.yml
-    content: |
-      version: '3'
-      services:
-        minio:
-          image: minio/minio
-          ports:
-            - "9000:9000"
-            - "9001:9001"
-          environment:
-            MINIO_ROOT_USER: admin
-            MINIO_ROOT_PASSWORD: minio123
-          command: server /data --console-address ":9001"
-          volumes:
-            - /minio/data:/data
-            - /minio/config:/root/.minio
+---
+- name: Установка и запуск Apache Superset через Docker
+  hosts: all
+  become: yes
+  vars:
+    superset_user: "admin"
+    superset_password: "admin"
+    superset_email: "admin@example.com"
+    superset_port: 8088
+    project_dir: "/opt/superset"
+    db_password: "superset"
 
-        grafana:
-          image: grafana/grafana
-          ports:
-            - "3000:3000"
-          volumes:
-            - grafana-storage:/var/lib/grafana
-          environment:
-            GF_SECURITY_ADMIN_PASSWORD: grafana123
+  tasks:
+    - name: Создание рабочей директории
+      file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: '0755'
 
-      volumes:
-        grafana-storage:
-  notify: start monitoring
+    - name: Установка зависимостей (Ubuntu/Debian)
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - python3-pip
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Добавление GPG-ключа Docker
+      command: curl -fsSL https://download.docker.com/linux/{{ (ansible_os_family == "RedHat") | ternary('centos','debian') }}/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+      args:
+        warn: no
+      when: not ansible_check_mode
+
+    - name: Добавление репозитория Docker
+      lineinfile:
+        dest: /etc/apt/sources.list.d/docker.list
+        line: "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/{{ (ansible_os_family == 'RedHat') | ternary('centos','debian') }} {{ ansible_distribution_release }} stable"
+        create: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Обновление кэша пакетов
+      apt:
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Установка Docker
+      apt:
+        name: docker-ce
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Установка Docker Compose (через pip)
+      pip:
+        name: docker-compose
+        executable: pip3
+
+    - name: Добавление пользователя в группу docker
+      user:
+        name: "{{ ansible_user }}"
+        group: docker
+        append: yes
+
+    - name: Перезапуск Docker
+      systemd:
+        name: docker
+        state: restarted
+        enabled: yes
+
+    - name: Создание директории для скриптов инициализации
+      file:
+        path: "{{ project_dir }}/init-scripts"
+        state: directory
+
+    - name: Копирование init.sh
+      copy:
+        dest: "{{ project_dir }}/init-scripts/init.sh"
+        content: |
+          #!/usr/bin/env bash
+          echo "⏳ Ожидание готовности базы данных..."
+          while ! nc -z db 5432; do
+            sleep 1
+          done
+          echo "✅ База данных готова!"
+
+          superset db upgrade
+
+          echo "🔧 Создание администратора..."
+          superset fab create-admin \
+              --username {{ superset_user }} \
+              --firstname Admin \
+              --lastname User \
+              --email {{ superset_email }} \
+              --password {{ superset_password }}
+
+          echo "📊 Загрузка примеров данных..."
+          superset load_examples
+
+          echo "🚀 Инициализация Superset..."
+          superset init
+
+          echo "🚀 Запуск Superset..."
+          superset run -h 0.0.0.0 -p {{ superset_port }} --with-threads
+        mode: '0755'
+
+    - name: Копирование superset_config.py
+      copy:
+        dest: "{{ project_dir }}/superset_config.py"
+        content: |
+          import os
+          SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI", "postgresql+psycopg2://superset:{{ db_password }}@db:5432/superset")
+          SECRET_KEY = "{{ lookup('password', '/dev/null length=24') }}"
+          WTF_CSRF_ENABLED = False
+
+    - name: Копирование docker-compose.yml
+      template:
+        dest: "{{ project_dir }}/docker-compose.yml"
+        content: |
+          version: '3.8'
+          services:
+            db:
+              image: postgres:13
+              environment:
+                POSTGRES_DB: superset
+                POSTGRES_USER: superset
+                POSTGRES_PASSWORD: {{ db_password }}
+              volumes:
+                - postgres_data:/var/lib/postgresql/data
+              ports:
+                - "5432:5432"
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U superset"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+
+            superset:
+              image: apache/superset:latest
+              working_dir: /app
+              volumes:
+                - /opt/superset/init-scripts:/app/init-scripts
+                - /opt/superset/superset_config.py:/app/superset_config.py
+              environment:
+                - SUPERSET_CONFIG_PATH=/app/superset_config.py
+              ports:
+                - "{{ superset_port }}:8088"
+              command: ["bash", "/app/init-scripts/init.sh"]
+              depends_on:
+                db:
+                  condition: service_healthy
+
+          volumes:
+            postgres_data:
+
+    - name: Запуск Superset через docker-compose
+      command: docker-compose -f {{ project_dir }}/docker-compose.yml up -d
+      args:
+        chdir: "{{ project_dir }}"
+
+    - name: Проверка, что Superset запущен
+      uri:
+        url: "http://localhost:{{ superset_port }}"
+        timeout: 30
+        follow_redirects: all
+      register: result
+      until: result.status == 200
+      retries: 12
+      delay: 10
+      ignore_errors: yes
+
+    - name: Вывод информации о запуске
+      debug:
+        msg: |
+          ✅ Superset успешно запущен!
+          🔗 Открой в браузере: http://{{ ansible_host }}:{{ superset_port }}
+          👤 Логин: {{ superset_user }}
+          🔐 Пароль: {{ superset_password }}
